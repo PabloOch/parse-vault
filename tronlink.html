@@ -1,0 +1,168 @@
+<h2>Please input last keyring from tron</h2>
+<textarea id="vault" style="width: 800px;height: 200px;" placeholder="Paste your vault here.">
+    {
+        "data": "tc9skvMD6StyWqC+YjYtTjeTJHh87w/bieiWxQ8rKdYfSsUPJvpbh321TNbgQy845xiclbatnskHBB/VaajRpbEFFEXPsWVWvw/YxOc+aMULG+bDONScrl7p1qw1Iqpnv3PvO2gdthB8RcF5eeip/nW+NUyGm9eUFjGT4CXhswAmAN9cj3w6c3reaX9TjbsdlqLD9Egsgu2AVAea3BLb4ySf37Xc1LdpRjf78CMf14bssVmdOoDWjgqopHUChTNj+L73HcDV6wxAenv+J45+GXuPgwQdrluPgdaHzlzisuhGG7w2LeT13JjP0gH81t066V52p7BrzIETrcT8BHjvMFkP/fFKfU5FLHed/AID1lOF8xSmDWZ7K8rPVqDjj3Ixy53nfGk7u2K/czxfqnlBb6AZQyV3E+pGPIZUzwff6FiDTkDoYikmQV+WjM5Rgh30Z5vS7PleUs+1A1omsfxesY4Us8ZJfE53RdLskdjVjMllHEov/Rei5vDHVgY9L8fl/jDlDzGLPr2vJJ1qP9Wod5UbLx3/KkrQ+nuc8r06+csRKyOMP3VlEB3tVa6XAZPJYaVX2oQO24SUFKVfeh5PDh4rCFgHzEV0x0wXgsssc8/1vctU0ckk9dwbY9frMlLLvl/t8ay300lrt1RF6imYx71HjuRQ2VVUzzgQPPvJ8314Pyd5fqU1212Gi2V7dIv0D5YnuIOgC1+X+QWxS9M/XULlAg2q",
+        "iv": "SzNFyatYwMbxhiz+lGTfeQ==",
+        "salt": "TT5fqCDuHUSwrTn9QalCe7yG5ionbv7UY7FfGb7HqrY="
+    }
+</textarea>
+<br />
+<br />
+<div>
+    <div>Password List</div>
+    <div style="display: flex;">
+        <textarea id="password-list" style="width: 300px;height: 200px;"></textarea>
+        <br />
+        <input id="password-file" type="file" style="margin-left: .25rem; width: 200px;" onchange="loadPasswords(event);" />
+        <br />
+        <button onclick="decrypt_bulk();" style="width: 50px; height: 20px;">Start</button>
+    </div>
+</div>
+<div style="display: flex;">
+    <div>
+        <div style="margin-top: 1rem;">Password</div>
+        <input id="password" type="text" value="qweQWE123!@#`" placeholder="Password" />
+        <br />
+        <button onclick="decrypt();" style="margin-top: .25rem;">Decrypt</button>
+    </div>
+</div>
+
+<br />
+<div id="status">Result:</div>
+<textarea id="result" style="width: 800px;height: 200px;" placeholder="Decrypted text..." readonly></textarea>
+
+<script>
+    function encodeUTF8(e) {
+        return encodeURIComponent(e).replace(/%([0-9A-F]{2})/g, (function (e, a) {
+            return String.fromCharCode(parseInt(a, 16))
+        }));
+    }
+
+    function decodeUTF8(e) {
+        var a = e.replace(/(.)/g, (function (e, a) {
+            var t = a.charCodeAt(0).toString(16).toUpperCase();
+            return t.length < 2 && (t = "0" + t),
+                "%" + t
+        }));
+        return decodeURIComponent(a)
+    }
+
+    function bufferToString(e) {
+        return Array.prototype.map.call(e, (function (e) {
+            return String.fromCharCode(e)
+        })).join("")
+    }
+
+    function stringToBuffer(e) {
+        var a;
+        return a = "undefined" != typeof Uint8Array ? new Uint8Array(e.length) : [],
+            Array.prototype.forEach.call(e, (function (e, t) {
+                a[t] = e.charCodeAt(0)
+            })), a
+    }
+
+    function base64ToBuffer(e) {
+        return stringToBuffer(atob(e))
+    }
+
+    function utf8ToBuffer(e) {
+        return stringToBuffer(encodeUTF8(e))
+    }
+
+    function bufferToUtf8(e) {
+        return decodeUTF8(bufferToString(e));
+    }
+
+    async function sha256(message) {
+        const msgBuffer = new TextEncoder().encode(message);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    }
+
+    async function decryptTronLink(vault, password) {
+        const password_sha256 = await sha256(password + "<trlk>");
+        const password_sha256_buffer = utf8ToBuffer(password_sha256);
+        const data = base64ToBuffer(vault.data);
+        const salt_buffer = base64ToBuffer(vault.salt);
+        const iv = base64ToBuffer(vault.iv);
+
+        const key_encoded = await crypto.subtle.importKey("raw", password_sha256_buffer, {
+            name: "PBKDF2"
+        }, false, ["deriveBits", "deriveKey"]);
+
+        const deriveKey = await crypto.subtle.deriveKey({
+            name: "PBKDF2",
+            salt: salt_buffer,
+            iterations: 1e4,
+            hash: "SHA-256"
+        }, key_encoded, {
+            name: "AES-GCM",
+            length: 256
+        }, false, ["encrypt", "decrypt"]);
+
+        try {
+            const decrypted = await crypto.subtle.decrypt({
+                name: "AES-GCM",
+                iv: iv,
+            }, deriveKey, data);
+
+            const uint8Array = new Uint8Array(decrypted);
+            const text = bufferToUtf8(uint8Array);
+            return text;
+        }
+        catch (e) {
+            throw new Error("Incorrect password")
+        }
+    }
+
+    function loadPasswords(e) {
+        const fileToLoad = e.target.files[0];
+        if (!fileToLoad) return;
+        const fileReader = new FileReader();
+        fileReader.onload = function (fileLoadedEvent) {
+            const text = fileLoadedEvent.target.result;
+            const passwordArray = [];
+            let i = 0;
+            while (true) {
+                i = text.indexOf("password : ", i);
+                if (i < 0) break;
+                i += "password : ".length;
+                const end = text.indexOf("\n", i);
+                const password = text.substring(i, end);
+                passwordArray.push(password);
+            }
+            document.querySelector("#password-list").value = passwordArray.join("\n");
+        };
+        fileReader.readAsText(fileToLoad, "UTF-8");
+    }
+
+    async function decrypt() {
+        const vaultText = document.querySelector("#vault").value.replace(/\\/g, "");
+        const vault = JSON.parse(vaultText);
+        const passwordText = document.querySelector("#password").value;
+        try {
+            document.querySelector("#result").value = await decryptTronLink(vault, passwordText);
+        } catch (e) {
+            document.querySelector("#result").value = e;
+        }
+    }
+
+    async function decrypt_bulk() {
+        const vaultText = document.querySelector("#vault").value.replace(/\\/g, "");
+        const vault = JSON.parse(vaultText);
+        const passwordList = document.querySelector("#password-list").value.split("\n");
+        for (let i = 0; i < passwordList.length; i++) {
+            const password = passwordList[i];
+            try {
+                document.querySelector("#password").value = password;
+                document.querySelector("#result").value = await decryptTronLink(vault, password);
+                break;
+            } catch (e) {
+                document.querySelector("#result").value = e;
+            }
+        }
+    }
+
+</script>
